@@ -9,19 +9,9 @@
 
 static float LOSS_RATE=0.0, ERR_RATE=0.0;
 
-/* uncomment this part for part 1
-#include "rdt-part1.h"
-#define MSG_LEN PAYLOAD
-*/
-
-/* uncomment this part for part 2
-#include "rdt-part2.h"
-#define MSG_LEN PAYLOAD
-*/
-
 /* uncomment this part for part 3 */
 #include "rdt-part3.h"
-#define MSG_LEN PAYLOAD*W
+#define MSG_LEN (PAYLOAD_LEN*W)
 
 
 

@@ -34,7 +34,10 @@ Compilation:
 #define TWAIT 10 * TIMEOUT //Each peer keeps an eye on the receiving
 //end for TWAIT time units before closing
 //For retransmission of missing last ACK
-#define W 9
+
+#define SMALL_WINDOW 4
+#define BIG_WINDOW 8
+static int window_size = SMALL_WINDOW;
 
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) < (b) ? (b) : (a))
@@ -46,9 +49,6 @@ typedef unsigned int u32b_t; // 32-bit word
 
 extern float LOSS_RATE, ERR_RATE;
 static int revSeq = 0, sendSeq = 0;
-
-// int revSeq = 0;
-// int sendSeq = 0;
 
 struct timeval tv1, tv2;
 fd_set readfds;
@@ -204,8 +204,6 @@ char buf[HEADER_LEN + PAYLOAD_LEN];
 int time_out(int fd, int seq, char* msg, int* msgLen, int& rSeq, struct timeval& tv) {
 
     FD_ZERO(&readfds);
-
-    // add our descriptors to the set
     FD_SET(fd, &readfds);
 
     // wait until either socket has data ready to be recv()d (timeout 10.5 secs)
@@ -307,16 +305,16 @@ int rdt_target(int fd, char* peer_name, u16b_t peer_port) {
    length -> length of application message
    return -> size of data sent on success, -1 on error
 */
-
-char pkt[W][HEADER_LEN + PAYLOAD_LEN];
-int pktLen[W];
 int rdt_send(int fd, char* msg, int length) {
+    const int t_window_size = window_size;
+    char pkt[t_window_size][HEADER_LEN + PAYLOAD_LEN];
+    int pktLen[t_window_size];
     //must use the udt_send() function to send data via the unreliable layer
     int unpktedLen = length;
     char* ptrM = msg;
     int l = 0, r = 0, i = 0;
     // first send out the message in several pkts
-    for (r = 0; r < W && 0 < unpktedLen; ++r) {
+    for (r = 0; r < t_window_size && 0 < unpktedLen; ++r) {
         // pkt[r] = new char[HEADER_LEN+PAYLOAD_LEN];
         int packLen = MIN(PAYLOAD_LEN, unpktedLen);
         pktLen[r] = make_pkt(pkt[r], ptrM, packLen, 0, sendSeq + r);
@@ -327,6 +325,7 @@ int rdt_send(int fd, char* msg, int length) {
     // make_pkt(char *packed_pkt, char *payLoad, int payLen, int ack, int seq)
 
     // the pkt window is [l, r)
+    bool is_timeout = false;
     while (1) {
         for (i = l; i < r; ++i) {
             printf("rdt_send: Send pkt of size: %d, with seq#: %d\n", pktLen[i], sendSeq + i);
@@ -335,16 +334,31 @@ int rdt_send(int fd, char* msg, int length) {
 
         int rSeq, temp;
         struct timeval tv = tv1; // set one timer for all the pkts sent in one round
-        for (i = l; i < r; ++i) // allow the timer to receive W ACK in one round
+        for (i = l; i < r; ++i) {
+            // allow the timer to receive W ACK in one round
             if ((temp = time_out(fd, sendSeq, NULL, NULL, rSeq, tv)) == 1) {
                 printf("rdt_send: received ACK with seq#: %d (%d-%d)\n", rSeq, sendSeq, (sendSeq + r - 1));
                 l = MAX(l, rSeq - sendSeq + 1);
-            }
-            else if (temp == 0) { // up to l-1 have been ACKed
+                // up to l-1 have been ACKed
+            } else if (temp == 0) {
+                is_timeout = true;
                 break; // break this round if timeout occurs
             }
+        }
         if (l == r) {
             break;
+        }
+    }
+    // congestion control by adjusting window size
+    if (is_timeout) {
+        if (window_size != SMALL_WINDOW) {
+            printf("Timeout occurred, switch to small window size of %d\n", SMALL_WINDOW);
+            window_size = SMALL_WINDOW;
+        }
+    } else {
+        if (window_size != BIG_WINDOW) {
+            printf("Transmitted successfully, switch to big window size of %d\n", BIG_WINDOW);
+            window_size = BIG_WINDOW;
         }
     }
     printf("rdt_send: pkts up to %d have been ACKed\n", sendSeq + l - 1);
@@ -407,8 +421,6 @@ int rdt_recv(int fd, char* msg, int length) {
         struct timeval tv = tv1;
 
         FD_ZERO(&readfds);
-
-        // add our descriptors to the set
         FD_SET(fd, &readfds);
 
         rv = select(fd + 1, &readfds, NULL, NULL, &tv);
@@ -451,7 +463,7 @@ int rdt_recv(int fd, char* msg, int length) {
 /* Application process calls this function to close the RDT socket.
 */
 int rdt_close(int fd) {
-    printf("\nIn rdt_close\n");
+    printf("=============================================================\nIn rdt_close\n");
     char* ack_pkt = new char[HEADER_LEN];
     int pktLen = make_pkt(ack_pkt, NULL, 0, 1, revSeq - 1);
     int temp, rSeq;

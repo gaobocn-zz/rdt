@@ -8,13 +8,13 @@
 #define CPORT 59079
 #define SPORT 59080
 
-#define STORAGE "Store"
+#define STORAGE "store"
 
 static float LOSS_RATE=0.0, ERR_RATE=0.0;
 
 /* uncomment this part for part 3 */
 #include "rdt-part3.h"
-#define MSG_LEN (PAYLOAD_LEN*W)
+#define MSG_LEN (PAYLOAD_LEN * BIG_WINDOW)
 
 
 

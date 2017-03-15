@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+#include <libgen.h>
 
 #define CPORT 59079
 #define SPORT 59080
@@ -11,16 +12,14 @@ static float LOSS_RATE=0.0, ERR_RATE=0.0;
 
 /* uncomment this part for part 3 */
 #include "rdt-part3.h"
-#define MSG_LEN (PAYLOAD_LEN*W)
-
-
+#define MSG_LEN (PAYLOAD_LEN * BIG_WINDOW)
 
 int main(int argc, char *argv[]){
 
     int sockfd;
     FILE * testfile;
     int filelength, len;
-    char * fname, * s;
+    char * fname, * s, *fbasename;
     char msg[MSG_LEN];
     int sent = 0;
     struct timeval starttime, endtime;
@@ -44,6 +43,7 @@ int main(int argc, char *argv[]){
     printf("PACKET_LOSS_RATE = %.2f, PACKET_ERR_RATE = %.2f\n", LOSS_RATE, ERR_RATE);
 
     fname=argv[2];
+    fbasename = basename(fname);
     //open file
     if (!(testfile = fopen(fname, "r"))) {
         printf("Open file failed.\nProgram terminated.");
@@ -72,7 +72,7 @@ int main(int argc, char *argv[]){
     rdt_send(sockfd, msg, strlen(msg));
 
     //send the file name to server
-    rdt_send(sockfd, fname, strlen(fname));
+    rdt_send(sockfd, fbasename, strlen(fbasename));
 
     //wait for server response
     memset(msg, '\0', MSG_LEN);
@@ -88,10 +88,11 @@ int main(int argc, char *argv[]){
     gettimeofday(&starttime, NULL);
     // send the file contents
     while (sent < filelength) {
-        if ((filelength-sent) < MSG_LEN)
+        int t_msg_len = PAYLOAD_LEN * window_size;
+        if ((filelength-sent) < t_msg_len)
             len = fread(msg, sizeof(char), filelength-sent, testfile);
         else
-            len = fread(msg, sizeof(char), MSG_LEN, testfile);
+            len = fread(msg, sizeof(char), t_msg_len, testfile);
         rdt_send(sockfd, msg, len);
         sent += len;
         usleep(1000);
